@@ -161,3 +161,42 @@ stateDiagram-v2
 - m1 candles are built from trades.
 - m5 from m1, m15 from m5, m30 from m15, h1 from m30, h4 from h1, d1 from h4.
 - Each higher timeframe is aggregated only when the lower timeframe completes the required number of intervals.
+
+## Direct Loading from CSV, Parquet, DuckDB, QuestDB
+
+The candle generator supports direct, high-performance loading of trades from major data sources:
+
+### API Examples
+
+```rust
+// CSV (using the `csv` crate)
+gen.load_trades_csv("trades.csv", true)?;
+
+// Parquet (using polars or arrow2)
+gen.load_trades_parquet("trades.parquet", true)?;
+
+// DuckDB (using SQL query and the `duckdb` crate)
+gen.load_trades_duckdb("SELECT * FROM trades", "trades.db", true)?;
+
+// QuestDB (using HTTP/CSV or Arrow streaming)
+gen.load_trades_questdb("SELECT * FROM trades", "http://localhost:9000", true)?;
+```
+
+- The `sorted` parameter should be set to `true` if the data is sorted by timestamp (for maximum speed).
+- For very large datasets, all loaders support streaming/iterator mode to avoid out-of-memory errors.
+- Internally, all loaders use the high-speed bulk ingestion API for maximum throughput.
+
+### Dependencies
+- CSV: [`csv`](https://crates.io/crates/csv)
+- Parquet: [`polars`](https://crates.io/crates/polars) or [`arrow2`](https://crates.io/crates/arrow2)
+- DuckDB: [`duckdb`](https://crates.io/crates/duckdb)
+- QuestDB: [`reqwest`](https://crates.io/crates/reqwest`) for HTTP, or Arrow/CSV for streaming
+
+### Performance Tips
+- Always use sorted data for fastest ingestion.
+- Use batch/streaming mode for huge files or databases.
+- For custom schemas, implement `From<Row>` for your `Trade` struct.
+
+---
+
+This makes the candle generator ready for research, backtesting, and production ingestion from any major data lake or database.
