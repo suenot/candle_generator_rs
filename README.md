@@ -1,4 +1,4 @@
-# Candle Generator (intuition-rust)
+# Candle Generator (from private project "Intuition")
 
 ## Quick Start
 
