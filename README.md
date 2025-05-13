@@ -90,29 +90,44 @@ gen.add_trades_iter(trades_iter);
 - **What is "super candle" mode?** Opt-in mode for 50-200+ metrics per candle; only enable for research/analytics, not for HFT.
 - **How do I add a new metric?** (Planned) Register via the metrics pipeline or extend the proto and Rust types.
 
-## Roadmap
+## Roadmap & Optional Features
+
 | Feature                        | Status     | Details/Link                       |
 |------------------------------- |----------- |------------------------------------|
 | Bulk ingestion (sorted)        | ✅         | High-speed, millions/sec           |
 | Bulk ingestion (unsorted)      | Planned    | Slower, for out-of-order data      |
 | Extra metrics (buy/sell, etc.) | Planned    | Optional, via config/pipeline      |
 | Super candle (100+ metrics)    | Planned    | Opt-in, for research/analytics     |
+| Candle history limit           | Planned    | Configurable memory usage          |
+| Thread safety                  | Planned    | For multi-threaded use             |
+| Multi-instrument support       | Planned    | Aggregate multiple instruments     |
+| Event/callback subscriptions   | Planned    | Subscribe to candle events         |
+| Raw mode for backfill          | Planned    | Max speed, skip edge-cases         |
 | CSV/Parquet/DuckDB/QuestDB     | Planned    | Direct, zero-copy ingestion        |
 | Metrics pipeline               | Planned    | Custom/user metrics, single-pass   |
 | Proto extensibility            | ✅         | See below                          |
 | See `/tasks/candle_generator.md` for full details and progress. |
 
-## Protobuf Schema Extension
-- To add new fields/metrics, edit the relevant `.proto` file in `/proto`.
-- Regenerate Rust types with `prost`/`tonic` (see build.rs or project setup).
-- All API/data messages must be generated from proto; manual struct definitions are forbidden.
+## How to Track Progress
+- The single source of truth for requirements, reasoning, and progress is [`/tasks/candle_generator.md`](./tasks/candle_generator.md).
+- Every feature, design decision, and implementation step is logged there.
+- **All changes must update both this README and the task file.**
 
 ## Contribution Guidelines
 - Propose new metrics, data sources, or features via issues or PRs.
 - Follow terminology in `.cursor/rules/terms.md`.
 - All changes must update this README and `/tasks/candle_generator.md`.
 - For new metrics, provide a performance impact estimate and a use case.
+- Add tests for all new features and edge cases.
+- Extend proto schemas as needed and regenerate Rust types.
 
+## Contact & Community
+- For questions, ideas, or to join the project, open an issue or PR on GitHub.
+- For strategic partnership or AGI research collaboration, contact the project maintainer directly.
+
+---
+
+This README, together with `/tasks/candle_generator.md`, is your complete, actionable hub for building the world's most advanced, terminology-strict, AGI-ready candle generator.
 
 ## Candle Generation Algorithm
 
