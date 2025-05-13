@@ -1,4 +1,5 @@
-# Candle Generator (from private project "Intuition")
+# Candle Generator
+From private project "Marketmaker.cc"
 
 ## Quick Start
 
