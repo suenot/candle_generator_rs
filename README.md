@@ -113,5 +113,35 @@ gen.add_trades_iter(trades_iter);
 - All changes must update this README and `/tasks/candle_generator.md`.
 - For new metrics, provide a performance impact estimate and a use case.
 
-## License
-MIT or as specified by the intuition project 
+
+## Candle Generation Algorithm
+
+The candle generator follows a strict, high-performance algorithm inspired by industry standards and the Go reference implementation. It robustly handles gaps, out-of-order trades, and strict aggregation chains.
+
+```mermaid
+stateDiagram-v2
+    [*] --> WaitingForTrade
+    WaitingForTrade --> ProcessingTrade: New Trade
+    ProcessingTrade --> UpdateCurrentCandle: Trade in Current Interval
+    ProcessingTrade --> FillGapsAndCreateNewCandle: Trade in Future Interval
+    ProcessingTrade --> UpdatePastCandle: Out-of-Order Trade
+    UpdateCurrentCandle --> WaitingForTrade
+    FillGapsAndCreateNewCandle --> StoreOldCandle
+    StoreOldCandle --> InitNewCandle
+    InitNewCandle --> WaitingForTrade
+    UpdatePastCandle --> WaitingForTrade
+```
+
+**States and Transitions:**
+- **WaitingForTrade**: Wait for the next trade event.
+- **ProcessingTrade**: A new trade arrives; determine its candle interval.
+- **UpdateCurrentCandle**: Trade is in the current (open) candle; update OHLCV and metrics.
+- **FillGapsAndCreateNewCandle**: Trade is in a future interval (gap detected); fill missing candles, create new candle.
+- **UpdatePastCandle**: Trade is out-of-order (belongs to a past interval); update the corresponding past candle.
+- **StoreOldCandle**: Store the completed candle before starting a new one.
+- **InitNewCandle**: Initialize a new candle with the trade's data.
+
+**Aggregation Chain:**
+- m1 candles are built from trades.
+- m5 from m1, m15 from m5, m30 from m15, h1 from m30, h4 from h1, d1 from h4.
+- Each higher timeframe is aggregated only when the lower timeframe completes the required number of intervals.
