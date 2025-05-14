@@ -7,6 +7,7 @@ use serde::Deserialize;
 use candle_generator::{Trade, Instrument, Pair, MarketType, Side};
 use std::time::Instant;
 use crate::aggregation;
+use crate::stats::{ProcessingStats, print_summary};
 
 #[derive(Debug, Deserialize)]
 struct CsvTrade {
@@ -66,7 +67,8 @@ fn parse_intervals(interval_str: &str) -> Vec<candle_generator::Timeframe> {
 }
 
 pub fn process_csv_batch(args: &Args) -> Result<()> {
-    let start = Instant::now();
+    let mut stats = ProcessingStats::new();
+    stats.start();
     let intervals = parse_intervals(&args.interval);
     let symbols: Vec<String> = if args.symbol.to_uppercase() == "ALL" {
         fs::read_dir(&args.input)?
@@ -88,6 +90,8 @@ pub fn process_csv_batch(args: &Args) -> Result<()> {
             .collect();
         println!("\nProcessing symbol: {} ({} files)", symbol, files.len());
         for file_path in files {
+            let io_start = Instant::now();
+            stats.add_file();
             println!("  File: {:?}", file_path.file_name().unwrap());
             let file = File::open(&file_path)?;
             let mut rdr = ReaderBuilder::new().has_headers(true).from_reader(file);
@@ -96,18 +100,26 @@ pub fn process_csv_batch(args: &Args) -> Result<()> {
                 let csv_trade: CsvTrade = result?;
                 trades.push(csv_trade.to_trade());
             }
+            stats.io_time += io_start.elapsed();
+            stats.add_trades(trades.len());
             println!("    Trades: {}", trades.len());
+            let agg_start = Instant::now();
             let chain = aggregation::aggregate_trades_chain(trades.iter(), &intervals);
+            stats.aggregation_time += agg_start.elapsed();
             for (tf, candles) in chain {
+                stats.add_candles(&format!("{:?}", tf), candles.len());
                 let out_dir = args.output.clone().unwrap_or_else(|| PathBuf::from("candles"));
                 let out_dir = out_dir.join(format!("{}_{}", symbol, format!("{:?}", tf)));
                 fs::create_dir_all(&out_dir)?;
                 let out_file = out_dir.join(format!("{}_{}.csv", file_path.file_stem().unwrap().to_string_lossy(), format!("{:?}", tf)));
+                let io_start = Instant::now();
                 aggregation::write_candles_csv(&candles, &out_file)?;
+                stats.io_time += io_start.elapsed();
                 println!("    [{:?}] Candles: {} -> {:?}", tf, candles.len(), out_file);
             }
         }
     }
-    println!("\nBatch completed in {:.2?}", start.elapsed());
+    stats.stop();
+    print_summary(&stats);
     Ok(())
 } 
