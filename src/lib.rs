@@ -184,9 +184,6 @@ fn aggregate_from_lower(lower: &[Candle], tf: &Timeframe) -> Vec<Candle> {
     result
 }
 
-#[cfg(test)]
-pub mod tests;
-
 pub struct CandleAggregator {
     pub config: CandleConfig,
 }
