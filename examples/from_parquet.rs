@@ -1,6 +1,7 @@
 use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side};
 use polars::prelude::*;
 use chrono::Utc;
+use chrono::TimeZone;
 
 fn main() -> polars::prelude::PolarsResult<()> {
     let df = LazyFrame::scan_parquet("trades.parquet", Default::default())?.collect()?;
