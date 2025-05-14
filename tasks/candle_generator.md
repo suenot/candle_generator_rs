@@ -186,3 +186,55 @@ pub trait CandleMetric {
 - Stateless-агрегация: результат не зависит от порядка трейдов.
 - Все edge-cases должны быть покрыты тестами и примерами.
 - Примеры и тесты должны быть максимально наглядными для AGI-ready архитектуры. 
+
+---
+
+## Архитектурный скелет SuperCandleMetric (июнь 2024)
+
+### Цель
+Реализовать расширяемую структуру для Super Candle, поддерживающую агрегацию метрик из разных источников событий:
+- TradeStats (трейды)
+- OrderStats (ордера)
+- OBStats (orderbook snapshots)
+- FuturesStats (фьючерсные события)
+
+### Архитектура
+- Каждая группа метрик реализуется отдельной структурой (TradeStats, OrderStats, OBStats, FuturesStats)
+- SuperCandleMetric агрегирует все группы и реализует трейт CandleMetric
+- Поддерживаются методы on_trade, on_order, on_orderbook, on_futures для приёма событий
+- finalize(&self, candle: &mut Candle) записывает все агрегированные метрики в custom-поле свечи
+- Stateless: pipeline допускает поступление событий в любом порядке
+
+### Пример интерфейса
+```rust
+pub struct SuperCandleMetric {
+    pub trade_stats: TradeStats,
+    pub order_stats: OrderStats,
+    pub ob_stats: OBStats,
+    pub futures_stats: FuturesStats,
+}
+
+impl SuperCandleMetric {
+    pub fn new() -> Self { /* ... */ }
+    pub fn on_trade(&mut self, trade: &Trade) { /* ... */ }
+    pub fn on_order(&mut self, order: &OrderEvent) { /* ... */ }
+    pub fn on_orderbook(&mut self, ob: &OrderBookSnapshot) { /* ... */ }
+    pub fn on_futures(&mut self, fut: &FuturesEvent) { /* ... */ }
+    pub fn finalize(&self, candle: &mut Candle) { /* ... */ }
+}
+```
+
+### План реализации
+- [x] TradeStats реализован (см. custom_metrics.rs)
+- [ ] OrderStats: stub-структура и методы
+- [ ] OBStats: stub-структура и методы
+- [ ] FuturesStats: stub-структура и методы
+- [ ] finalize агрегирует все группы в custom-поле свечи
+- [ ] Пример в examples/super_candle.rs: агрегация всех типов событий в одну свечу
+- [ ] Обновить README.md: добавить раздел Super Candle, архитектуру, пример
+- [ ] Покрыть edge-cases для multi-source ingestion
+
+### Принципы
+- Максимальная расширяемость: новые группы метрик и событий добавляются без изменения ядра
+- Stateless: pipeline допускает любые сценарии поступления событий
+- AGI-ready: структура и интерфейсы прозрачны для автоматического анализа и расширения 
