@@ -43,6 +43,7 @@ let candles = generator.aggregate(trades.iter(), Timeframe::m1);
 - Раздельный учёт объёма покупок и продаж: [buy_sell_volume.rs](examples/buy_sell_volume.rs)
 - Кастомные метрики (VWAP, super candle и др.): [custom_metrics.rs](examples/custom_metrics.rs)
 - Быстрая агрегация большого объёма трейдов: [bulk_ingestion.rs](examples/bulk_ingestion.rs)
+- Bulk ingestion с неотсортированными трейдами: [bulk_ingestion_unsorted.rs](examples/bulk_ingestion_unsorted.rs)
 - Свечи с пропусками (gaps): [gaps_and_empty_candles.rs](examples/gaps_and_empty_candles.rs)
 - Out-of-order трейды: [out_of_order_trades.rs](examples/out_of_order_trades.rs)
 
@@ -108,7 +109,7 @@ pub trait CandleMetric {
 - **Как реализовать bulk ingestion?** — Используйте примеры в examples/ для загрузки больших объёмов данных.
 - **Как работает strict aggregation chain?** — Каждая свеча старшего таймфрейма строится только после завершения нужного количества младших.
 - **Как рассчитать объём в USDT?** — Используйте опции CandleConfig: Fixed, Callback, None.
-- **Можно ли использовать неотсортированные трейды?** — Да, но это будет медленнее (поддержка planned).
+- **Можно ли использовать неотсортированные трейды?** — Да, начиная с версии 0.2.0: поддерживается bulk ingestion с неотсортированными трейдами (см. пример bulk_ingestion_unsorted.rs). Для максимальной производительности рекомендуется подавать отсортированные трейды.
 - **Как расширять структуру свечи?** — Через proto/serde-атрибуты и кастомные метрики.
 
 ---
