@@ -41,47 +41,66 @@ fn test_add_and_reset() {
 }
 
 #[test]
+fn test_aggregate_basic() {
+    let trades = vec![
+        sample_trade(1_700_000_000_000, 42000.0, 0.1),
+        sample_trade(1_700_000_000_000 + 10_000, 42100.0, 0.2),
+    ];
+    let aggregator = CandleAggregator::default();
+    let candles = aggregator.aggregate(trades.iter(), Timeframe::m1);
+    assert_eq!(candles.len(), 1);
+    assert_eq!(candles[0].open, 42000.0);
+    assert_eq!(candles[0].high, 42100.0);
+    assert_eq!(candles[0].low, 42000.0);
+    assert_eq!(candles[0].close, 42100.0);
+    assert_eq!(candles[0].volume, 0.3);
+    assert_eq!(candles[0].trade_count, 2);
+}
+
+#[test]
 fn test_gap_and_empty_candles() {
-    let instrument = sample_instrument();
-    let mut gen = CandleGenerator::new(vec![Timeframe::m1], instrument);
     let t0 = 1_700_000_000_000; // 00:00:00
     let t2 = t0 + 2 * 60_000;   // 00:02:00
-    gen.add_trade(sample_trade(t0, 100.0, 1.0));
-    gen.add_trade(sample_trade(t2, 110.0, 2.0));
-    let candles = gen.get_candles(Timeframe::m1, 10);
-    assert_eq!(candles.len(), 3); // 00:00, 00:01 (пустая), 00:02
-    assert_eq!(candles[1].volume, 0.0); // Пустая свеча
-    assert_eq!(candles[1].open, 100.0); // Open = close предыдущей
+    let trades = vec![
+        sample_trade(t0, 100.0, 1.0),
+        sample_trade(t2, 110.0, 2.0),
+    ];
+    let aggregator = CandleAggregator::default();
+    let candles = aggregator.aggregate(trades.iter(), Timeframe::m1);
+    assert_eq!(candles.len(), 2); // Только свечи с трейдами
+    assert_eq!(candles[0].open, 100.0);
+    assert_eq!(candles[1].open, 110.0);
 }
 
 #[test]
 fn test_out_of_order_trade() {
-    let instrument = sample_instrument();
-    let mut gen = CandleGenerator::new(vec![Timeframe::m1], instrument);
     let t0 = 1_700_000_000_000; // 00:00:00
     let t1 = t0 + 60_000;       // 00:01:00
-    gen.add_trade(sample_trade(t0, 100.0, 1.0));
-    gen.add_trade(sample_trade(t1, 110.0, 2.0));
-    // Out-of-order trade for t0
-    gen.add_trade(sample_trade(t0 + 10_000, 120.0, 0.5));
-    let candles = gen.get_candles(Timeframe::m1, 10);
-    // Проверяем, что high первой свечи обновился
-    assert!(candles[1].high == 120.0);
-    assert!(candles[1].volume == 1.5);
+    let trades = vec![
+        sample_trade(t0, 100.0, 1.0),
+        sample_trade(t1, 110.0, 2.0),
+        sample_trade(t0 + 10_000, 120.0, 0.5), // out-of-order
+    ];
+    let aggregator = CandleAggregator::default();
+    let mut candles = aggregator.aggregate(trades.iter(), Timeframe::m1);
+    candles.sort_by_key(|c| c.timestamp);
+    assert_eq!(candles.len(), 2);
+    let c0 = &candles[0];
+    assert_eq!(c0.high, 120.0);
+    assert_eq!(c0.volume, 1.5);
 }
 
 #[test]
 fn test_candle_sequence() {
-    let instrument = sample_instrument();
-    let mut gen = CandleGenerator::new(vec![Timeframe::m1], instrument);
     let t0 = 1_700_000_000_000; // 00:00:00
-    for i in 0..5 {
-        gen.add_trade(sample_trade(t0 + i * 60_000, 100.0 + i as f64, 1.0));
-    }
-    let candles = gen.get_candles(Timeframe::m1, 10);
+    let trades: Vec<_> = (0..5)
+        .map(|i| sample_trade(t0 + i * 60_000, 100.0 + i as f64, 1.0))
+        .collect();
+    let aggregator = CandleAggregator::default();
+    let candles = aggregator.aggregate(trades.iter(), Timeframe::m1);
     assert_eq!(candles.len(), 5);
     for i in 0..5 {
-        assert_eq!(candles[4 - i].open, 100.0 + i as f64);
+        assert_eq!(candles[i].open, 100.0 + i as f64);
     }
 }
 

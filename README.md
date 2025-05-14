@@ -1,202 +1,129 @@
 # Candle Generator
 From private project "Marketmaker.cc"
 
+**Stateless, AGI-ready библиотека для агрегации трейдов в свечи (candles) по индустриальным стандартам.**
+
+---
+
+## Features
+- Terminology-strict, AGI-ready, modular, and exchange-agnostic
+- Protobuf-first: all types/messages в `/proto`, Rust via `prost`/`tonic`
+- Strict aggregation chain: m1→m5→m15→m30→h1→h4→d1 (см. ниже)
+- USDT volume calculation (fixed/callback/none)
+- High-performance bulk ingestion (sorted by default, реализовано в examples/)
+- Edge case handling: gaps, empty candles, out-of-order trades
+- Optional metrics, super candle support (planned)
+- Fast loading from CSV, Parquet, DuckDB, QuestDB (реализовано в examples/)
+
+---
+
 ## Quick Start
 
 ```rust
 use candle_generator::*;
-use chrono::Utc;
 
-let instrument = Instrument {
-    pair: Pair { base_id: "BTC".into(), quote_id: "USDT".into() },
-    exchange: "binance".into(),
-    market_type: MarketType::Spot,
-};
-let mut gen = CandleGenerator::new(
-    vec![Timeframe::m1, Timeframe::m5, Timeframe::h1],
-    instrument.clone(),
-    UsdtVolumeSource::Fixed(1.0),
-);
-
-gen.add_trade(Trade {
-    instrument: instrument.clone(),
-    id: "t1".into(),
-    price: 50000.0,
-    amount: 0.1,
-    side: Side::Buy,
-    timestamp: Utc::now(),
-});
-
-let candles = gen.get_candles(Timeframe::m1, 10);
+let generator = CandleGenerator::default();
+let candles = generator.aggregate(trades.iter(), Timeframe::m1);
 ```
 
-## Features
-- Terminology-strict, AGI-ready, modular, and exchange-agnostic
-- Protobuf-first: all types/messages in `/proto`, Rust via `prost`/`tonic`
-- Strict aggregation chain: m1→m5→m15→m30→h1→h4→d1
-- USDT volume calculation (fixed/callback/none)
-- High-performance bulk ingestion (sorted by default)
-- Edge case handling: gaps, empty candles, out-of-order trades
-- Optional metrics, super candle support (planned)
-- Fast loading from CSV, Parquet, DuckDB, QuestDB (planned)
+---
 
-## Advanced Usage
+## Advanced Usage & Examples
 
-### Bulk Ingestion
+- Загрузка из CSV: [from_csv.rs](examples/from_csv.rs)
+- Загрузка из Parquet: [from_parquet.rs](examples/from_parquet.rs)
+- Загрузка из DuckDB: [from_duckdb.rs](examples/from_duckdb.rs)
+- Загрузка из QuestDB: [from_questdb.rs](examples/from_questdb.rs)
+- Загрузка из ClickHouse: [from_clickhouse.rs](examples/from_clickhouse.rs)
+- Строгая цепочка агрегации: [aggregation_chain.rs](examples/aggregation_chain.rs) (m1→m5→m15→m30→h1→h4→d1)
+- Расчёт объёма в USDT: [usdt_volume.rs](examples/usdt_volume.rs) (Fixed, Callback, None)
+- Раздельный учёт объёма покупок и продаж: [buy_sell_volume.rs](examples/buy_sell_volume.rs)
+- Кастомные метрики (VWAP, super candle и др.): [custom_metrics.rs](examples/custom_metrics.rs)
+- Быстрая агрегация большого объёма трейдов: [bulk_ingestion.rs](examples/bulk_ingestion.rs)
+
+---
+
+## Candle Generation Algorithm
+
+CandleGenerator реализует строгую цепочку агрегации:
+- m1 свечи строятся из трейдов
+- m5 из m1, m15 из m5, m30 из m15, h1 из m30, h4 из h1, d1 из h4
+- Каждая свеча старшего таймфрейма строится только после завершения нужного количества младших
+
+**Edge-cases:**
+- Обработка пропусков (gaps), пустых свечей, out-of-order трейдов
+- Bulk ingestion поддерживает только отсортированные трейды для максимальной производительности
+
+---
+
+## Metrics & Extensibility
+
+- **USDT volume calculation:**
+    - Поддержка расчёта объёма в USDT (fixed rate, callback, none)
+- **Custom metrics:**
+    - Через CandleMetric можно реализовать любые дополнительные метрики (VWAP, buy/sell volume, super candle и др.)
+- **Proto/Arrow extensibility:**
+    - Для расширения структуры свечи используйте proto/serde-атрибуты
+
+**Пример кастомной метрики:**
 ```rust
-// Bulk load from a Vec<Trade> (must be sorted by timestamp ascending!)
-gen.add_trades_bulk(&trades);
-// Or from an iterator
-gen.add_trades_iter(trades_iter);
-```
-
-### Loading from CSV/Parquet/DuckDB
-```rust
-// CSV
-let mut rdr = csv::Reader::from_path("trades.csv")?;
-let trades: Vec<Trade> = rdr.deserialize().collect::<Result<_,_>>()?;
-gen.add_trades_bulk(&trades);
-
-// Parquet (polars)
-let df = polars::prelude::LazyFrame::scan_parquet("trades.parquet", Default::default())?.collect()?;
-for trade in df.iter().map(|row| Trade::from_row(row)) {
-    gen.add_trade(trade);
+pub trait CandleMetric {
+    fn update(&self, trade: &Trade, candle: &mut Candle);
+    fn aggregate(&self, src: &[Candle], dst: &mut Candle);
 }
-
-// DuckDB
-let conn = duckdb::Connection::open("trades.db")?;
-let mut stmt = conn.prepare("SELECT * FROM trades")?;
-let trades_iter = stmt.query_map([], |row| Trade::from_row(row))?;
-gen.add_trades_iter(trades_iter);
 ```
 
-### Enabling Extra Metrics (Planned)
-```rust
-// Planned: enable buy/sell volume, VWAP, etc. via config or builder
-// let mut gen = CandleGeneratorBuilder::new().enable_buy_sell_volume(true).build();
-```
-
-## Performance Benchmarks (Planned)
-- Benchmarks will be provided to demonstrate millions of trades/sec ingestion on modern hardware.
-- Users can run `cargo bench` to test on their own data.
-
-## Extensibility & Customization
-- **Custom Metrics:** Planned metrics pipeline will allow users to register custom metrics for each candle.
-- **Proto Extension:** To add new fields, extend the relevant `.proto` file in `/proto`, then regenerate Rust types with `prost`/`tonic`.
-- **New Data Sources:** Integrate with any source (CSV, Parquet, DuckDB, QuestDB, Arrow, etc.) via bulk/iterator APIs.
-
-## FAQ / Best Practices
-- **How do I maximize speed?** Always provide sorted trades, use bulk ingestion, and enable only the metrics you need.
-- **Can I use unsorted trades?** Yes, but it will be much slower. (Planned: `add_trades_bulk_unsorted` or `sorted: bool` parameter.)
-- **What is "super candle" mode?** Opt-in mode for 50-200+ metrics per candle; only enable for research/analytics, not for HFT.
-- **How do I add a new metric?** (Planned) Register via the metrics pipeline or extend the proto and Rust types.
+---
 
 ## Roadmap & Optional Features
 
 | Feature                        | Status     | Details/Link                       |
 |------------------------------- |----------- |------------------------------------|
-| Bulk ingestion (sorted)        | ✅         | High-speed, millions/sec           |
-| Bulk ingestion (unsorted)      | Planned    | Slower, for out-of-order data      |
-| Extra metrics (buy/sell, etc.) | Planned    | Optional, via config/pipeline      |
-| Super candle (100+ metrics)    | Planned    | Opt-in, for research/analytics     |
-| Candle history limit           | Planned    | Configurable memory usage          |
-| Thread safety                  | Planned    | For multi-threaded use             |
-| Multi-instrument support       | Planned    | Aggregate multiple instruments     |
-| Event/callback subscriptions   | Planned    | Subscribe to candle events         |
-| Raw mode for backfill          | Planned    | Max speed, skip edge-cases         |
-| CSV/Parquet/DuckDB/QuestDB     | Planned    | Direct, zero-copy ingestion        |
-| Metrics pipeline               | Planned    | Custom/user metrics, single-pass   |
-| Proto extensibility            | ✅         | See below                          |
+| Bulk ingestion (sorted)        | ✅         | В examples/                        |
+| Bulk ingestion (unsorted)      | Planned    |                                    |
+| Extra metrics (buy/sell, etc.) | Planned    | Через CandleMetric                 |
+| Super candle (100+ metrics)    | Planned    |                                    |
+| Candle history limit           | Planned    |                                    |
+| Thread safety                  | Planned    |                                    |
+| Multi-instrument support       | Planned    |                                    |
+| Event/callback subscriptions   | Planned    |                                    |
+| Raw mode for backfill          | Planned    |                                    |
+| CSV/Parquet/DuckDB/QuestDB     | ✅         | В examples/                        |
+| Metrics pipeline               | Planned    |                                    |
+| Proto extensibility            | ✅         |                                    |
 | See `/tasks/candle_generator.md` for full details and progress. |
 
-## How to Track Progress
-- The single source of truth for requirements, reasoning, and progress is [`/tasks/candle_generator.md`](./tasks/candle_generator.md).
-- Every feature, design decision, and implementation step is logged there.
-- **All changes must update both this README and the task file.**
+---
+
+## FAQ / Best Practices
+
+- **Какой основной принцип?** — Stateless: библиотека не хранит историю, только агрегирует поток трейдов в свечи.
+- **Как добавить новый источник данных?** — Через пример в examples/ и реализацию TradeParser.
+- **Как добавить новую метрику?** — Через CandleMetric и расширение структуры Candle.
+- **Как реализовать bulk ingestion?** — Используйте примеры в examples/ для загрузки больших объёмов данных.
+- **Как работает strict aggregation chain?** — Каждая свеча старшего таймфрейма строится только после завершения нужного количества младших.
+- **Как рассчитать объём в USDT?** — Используйте опции CandleConfig: Fixed, Callback, None.
+- **Можно ли использовать неотсортированные трейды?** — Да, но это будет медленнее (поддержка planned).
+- **Как расширять структуру свечи?** — Через proto/serde-атрибуты и кастомные метрики.
+
+---
 
 ## Contribution Guidelines
-- Propose new metrics, data sources, or features via issues or PRs.
-- Follow terminology in `.cursor/rules/terms.md`.
-- All changes must update this README and `/tasks/candle_generator.md`.
-- For new metrics, provide a performance impact estimate and a use case.
-- Add tests for all new features and edge cases.
-- Extend proto schemas as needed and regenerate Rust types.
-
-## Contact & Community
-- For questions, ideas, or to join the project, open an issue or PR on GitHub.
-- For strategic partnership or AGI research collaboration, contact the project maintainer directly.
+- Все архитектурные решения и прогресс фиксируются в `/tasks/candle_generator.md`.
+- Для предложений и новых сценариев — создавайте PR или issue.
+- Следуйте терминологии из `.cursor/rules/terms.md`.
+- Все изменения должны обновлять README и tasks/candle_generator.md.
 
 ---
 
-This README, together with `/tasks/candle_generator.md`, is your complete, actionable hub for building the world's most advanced, terminology-strict, AGI-ready candle generator.
-
-## Candle Generation Algorithm
-
-The candle generator follows a strict, high-performance algorithm inspired by industry standards and the Go reference implementation. It robustly handles gaps, out-of-order trades, and strict aggregation chains.
-
-```mermaid
-stateDiagram-v2
-    [*] --> WaitingForTrade
-    WaitingForTrade --> ProcessingTrade: New Trade
-    ProcessingTrade --> UpdateCurrentCandle: Trade in Current Interval
-    ProcessingTrade --> FillGapsAndCreateNewCandle: Trade in Future Interval
-    ProcessingTrade --> UpdatePastCandle: Out-of-Order Trade
-    UpdateCurrentCandle --> WaitingForTrade
-    FillGapsAndCreateNewCandle --> StoreOldCandle
-    StoreOldCandle --> InitNewCandle
-    InitNewCandle --> WaitingForTrade
-    UpdatePastCandle --> WaitingForTrade
-```
-
-**States and Transitions:**
-- **WaitingForTrade**: Wait for the next trade event.
-- **ProcessingTrade**: A new trade arrives; determine its candle interval.
-- **UpdateCurrentCandle**: Trade is in the current (open) candle; update OHLCV and metrics.
-- **FillGapsAndCreateNewCandle**: Trade is in a future interval (gap detected); fill missing candles, create new candle.
-- **UpdatePastCandle**: Trade is out-of-order (belongs to a past interval); update the corresponding past candle.
-- **StoreOldCandle**: Store the completed candle before starting a new one.
-- **InitNewCandle**: Initialize a new candle with the trade's data.
-
-**Aggregation Chain:**
-- m1 candles are built from trades.
-- m5 from m1, m15 from m5, m30 from m15, h1 from m30, h4 from h1, d1 from h4.
-- Each higher timeframe is aggregated only when the lower timeframe completes the required number of intervals.
-
-## Direct Loading from CSV, Parquet, DuckDB, QuestDB
-
-The candle generator supports direct, high-performance loading of trades from major data sources:
-
-### API Examples
-
-```rust
-// CSV (using the `csv` crate)
-gen.load_trades_csv("trades.csv", true)?;
-
-// Parquet (using polars or arrow2)
-gen.load_trades_parquet("trades.parquet", true)?;
-
-// DuckDB (using SQL query and the `duckdb` crate)
-gen.load_trades_duckdb("SELECT * FROM trades", "trades.db", true)?;
-
-// QuestDB (using HTTP/CSV or Arrow streaming)
-gen.load_trades_questdb("SELECT * FROM trades", "http://localhost:9000", true)?;
-```
-
-- The `sorted` parameter should be set to `true` if the data is sorted by timestamp (for maximum speed).
-- For very large datasets, all loaders support streaming/iterator mode to avoid out-of-memory errors.
-- Internally, all loaders use the high-speed bulk ingestion API for maximum throughput.
-
-### Dependencies
-- CSV: [`csv`](https://crates.io/crates/csv)
-- Parquet: [`polars`](https://crates.io/crates/polars) or [`arrow2`](https://crates.io/crates/arrow2)
-- DuckDB: [`duckdb`](https://crates.io/crates/duckdb)
-- QuestDB: [`reqwest`](https://crates.io/crates/reqwest`) for HTTP, or Arrow/CSV for streaming
-
-### Performance Tips
-- Always use sorted data for fastest ingestion.
-- Use batch/streaming mode for huge files or databases.
-- For custom schemas, implement `From<Row>` for your `Trade` struct.
+## Контакты и вклад
+- Для вопросов, идей и сотрудничества — открывайте issue или PR на GitHub.
+- Для стратегического партнёрства и AGI-исследований — пишите напрямую мейнтейнеру.
 
 ---
 
-This makes the candle generator ready for research, backtesting, and production ingestion from any major data lake or database.
+## TODO
+- [ ] Stateless-агрегатор
+- [ ] Примеры для CSV, Parquet, DuckDB, QuestDB, ClickHouse
+- [ ] Кастомные метрики и экспорт
+- [ ] Документация и тесты

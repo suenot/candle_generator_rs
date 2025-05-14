@@ -20,165 +20,102 @@ use chrono::{DateTime, Utc, Timelike, TimeZone, Duration, Datelike};
 use std::collections::HashMap;
 
 pub struct CandleGenerator {
-    pub instrument: Instrument,
-    pub timeframes: Vec<Timeframe>,
-    pub candles: HashMap<Timeframe, Vec<Candle>>,
-    pub usdt_volume_source: UsdtVolumeSource,
+    pub config: CandleConfig,
+}
+
+impl Default for CandleGenerator {
+    fn default() -> Self {
+        Self { config: CandleConfig::default() }
+    }
 }
 
 impl CandleGenerator {
-    pub fn new(timeframes: Vec<Timeframe>, instrument: Instrument, usdt_volume_source: UsdtVolumeSource) -> Self {
-        let mut candles = HashMap::new();
-        for tf in &timeframes {
-            candles.insert(tf.clone(), Vec::new());
-        }
-        Self { instrument, timeframes, candles, usdt_volume_source }
-    }
-
-    pub fn add_trade(&mut self, trade: Trade) {
-        // m1 агрегация из трейдов
-        let tf = Timeframe::m1;
-        let minute = trade.timestamp.date_naive().and_hms_opt(trade.timestamp.hour(), trade.timestamp.minute(), 0).unwrap();
-        let mut m1_candles = self.candles.entry(tf.clone()).or_insert_with(Vec::new);
-
-        // Рассчитываем volume_usdt для трейда
-        let volume_usdt = calc_volume_usdt(&trade, trade.price * trade.amount, &self.usdt_volume_source);
-
-        if m1_candles.is_empty() {
-            m1_candles.push(Candle {
-                instrument: trade.instrument.clone(),
-                interval: tf.clone(),
-                timestamp: minute.and_utc(),
-                open: trade.price,
-                high: trade.price,
-                low: trade.price,
-                close: trade.price,
-                volume: trade.amount,
-                trade_count: 1,
-                volume_usdt,
-            });
-        } else {
-            let last = m1_candles.last_mut().unwrap();
-            let last_time = last.timestamp;
-            if minute.and_utc() == last_time {
-                last.high = last.high.max(trade.price);
-                last.low = last.low.min(trade.price);
-                last.close = trade.price;
-                last.volume += trade.amount;
-                last.trade_count += 1;
-                if let Some(vu) = volume_usdt {
-                    last.volume_usdt = Some(last.volume_usdt.unwrap_or(0.0) + vu);
-                }
-            } else if minute.and_utc() > last_time {
-                let mut t = last_time + Duration::minutes(1);
-                while t < minute.and_utc() {
-                    m1_candles.push(Candle {
-                        instrument: trade.instrument.clone(),
-                        interval: tf.clone(),
-                        timestamp: t,
-                        open: last.close,
-                        high: last.close,
-                        low: last.close,
-                        close: last.close,
-                        volume: 0.0,
-                        trade_count: 0,
-                        volume_usdt: last.volume_usdt,
-                    });
-                    t = t + Duration::minutes(1);
-                }
-                m1_candles.push(Candle {
-                    instrument: trade.instrument.clone(),
-                    interval: tf.clone(),
-                    timestamp: minute.and_utc(),
-                    open: trade.price,
-                    high: trade.price,
-                    low: trade.price,
-                    close: trade.price,
-                    volume: trade.amount,
-                    trade_count: 1,
-                    volume_usdt,
-                });
-            } else {
-                if let Some(c) = m1_candles.iter_mut().find(|c| c.timestamp == minute.and_utc()) {
+    pub fn aggregate<'a, I>(&self, trades: I, timeframe: Timeframe) -> Vec<Candle>
+    where
+        I: Iterator<Item = &'a Trade>,
+    {
+        let mut candles = Vec::new();
+        let mut current: Option<Candle> = None;
+        for trade in trades {
+            let ts = truncate_to_tf(trade.timestamp, &timeframe);
+            match &mut current {
+                Some(c) if c.timestamp == ts => {
                     c.high = c.high.max(trade.price);
                     c.low = c.low.min(trade.price);
                     c.close = trade.price;
                     c.volume += trade.amount;
                     c.trade_count += 1;
-                    if let Some(vu) = volume_usdt {
+                    // USDT volume
+                    if let Some(vu) = calc_volume_usdt(trade, &self.config.volume_in_usdt) {
                         c.volume_usdt = Some(c.volume_usdt.unwrap_or(0.0) + vu);
                     }
+                    // Кастомные метрики
+                    for m in &self.config.custom_metrics {
+                        m.update(trade, c);
+                    }
+                }
+                Some(c) => {
+                    candles.push(c.clone());
+                    current = Some(new_candle(trade, timeframe.clone(), ts, &self.config));
+                }
+                None => {
+                    current = Some(new_candle(trade, timeframe.clone(), ts, &self.config));
                 }
             }
         }
-        self.aggregate_higher_timeframes(Timeframe::m1);
-    }
-
-    fn aggregate_higher_timeframes(&mut self, changed_tf: Timeframe) {
-        let mut tf = changed_tf;
-        while let Some(parent_tf) = source_timeframe_parent(&tf) {
-            if !self.candles.contains_key(&parent_tf) { break; }
-            let src = self.candles.get(&tf).unwrap();
-            let count = count_for_tf(&parent_tf);
-            if src.len() < count { break; }
-            let last_src = &src[src.len() - 1];
-            let period_start = truncate_to_tf(last_src.timestamp, &parent_tf);
-            let parent_candles = self.candles.get_mut(&parent_tf).unwrap();
-            if parent_candles.last().map(|c| c.timestamp) == Some(period_start) { tf = parent_tf; continue; }
-            let src_slice = &src[src.len() - count..];
-            let candle = aggregate_candles(src_slice, parent_tf.clone(), period_start);
-            parent_candles.push(candle);
-            tf = parent_tf;
+        if let Some(c) = current {
+            candles.push(c);
         }
+        candles
     }
 
-    pub fn get_candles(&self, timeframe: Timeframe, limit: usize) -> Vec<Candle> {
-        self.candles.get(&timeframe)
-            .map(|v| v.iter().rev().take(limit).cloned().collect())
-            .unwrap_or_default()
-    }
-
-    pub fn reset(&mut self) {
-        for v in self.candles.values_mut() {
-            v.clear();
+    /// Строит цепочку агрегации: m1→m5→m15→m30→h1→h4→d1
+    pub fn aggregate_chain<'a, I>(&self, trades: I) -> HashMap<Timeframe, Vec<Candle>>
+    where
+        I: Iterator<Item = &'a Trade> + Clone,
+    {
+        let mut result = HashMap::new();
+        let mut tf_order = vec![Timeframe::m1, Timeframe::m5, Timeframe::m15, Timeframe::m30, Timeframe::h1, Timeframe::h4, Timeframe::d1];
+        let mut prev = self.aggregate(trades.clone(), Timeframe::m1);
+        result.insert(Timeframe::m1, prev.clone());
+        for tf in tf_order.into_iter().skip(1) {
+            let higher = aggregate_from_lower(&prev, tf);
+            result.insert(tf, higher.clone());
+            prev = higher;
         }
+        result
     }
 }
 
-fn calc_volume_usdt(trade: &Trade, value: f64, src: &UsdtVolumeSource) -> Option<f64> {
+fn new_candle(trade: &Trade, tf: Timeframe, ts: DateTime<Utc>, config: &CandleConfig) -> Candle {
+    let mut c = Candle {
+        instrument: trade.instrument.clone(),
+        interval: tf,
+        timestamp: ts,
+        open: trade.price,
+        high: trade.price,
+        low: trade.price,
+        close: trade.price,
+        volume: trade.amount,
+        trade_count: 1,
+        volume_usdt: calc_volume_usdt(trade, &config.volume_in_usdt),
+    };
+    for m in &config.custom_metrics {
+        m.update(trade, &mut c);
+    }
+    c
+}
+
+fn calc_volume_usdt(trade: &Trade, src: &UsdtVolumeSource) -> Option<f64> {
     let quote = &trade.instrument.pair.quote_id;
     if quote == "USDT" {
-        Some(value)
+        Some(trade.price * trade.amount)
     } else {
         match src {
-            UsdtVolumeSource::Fixed(rate) => Some(value * rate),
-            UsdtVolumeSource::Callback(cb) => cb(&trade.instrument.pair, trade.timestamp).map(|r| value * r),
+            UsdtVolumeSource::Fixed(rate) => Some(trade.price * trade.amount * rate),
+            UsdtVolumeSource::Callback(cb) => cb(&trade.instrument.pair, trade.timestamp).map(|r| trade.price * trade.amount * r),
             UsdtVolumeSource::None => None,
         }
-    }
-}
-
-fn source_timeframe_parent(tf: &Timeframe) -> Option<Timeframe> {
-    match tf {
-        Timeframe::m1 => Some(Timeframe::m5),
-        Timeframe::m5 => Some(Timeframe::m15),
-        Timeframe::m15 => Some(Timeframe::m30),
-        Timeframe::m30 => Some(Timeframe::h1),
-        Timeframe::h1 => Some(Timeframe::h4),
-        Timeframe::h4 => Some(Timeframe::d1),
-        _ => None,
-    }
-}
-
-fn count_for_tf(tf: &Timeframe) -> usize {
-    match tf {
-        Timeframe::m5 => 5,
-        Timeframe::m15 => 3,
-        Timeframe::m30 => 2,
-        Timeframe::h1 => 2,
-        Timeframe::h4 => 4,
-        Timeframe::d1 => 6,
-        _ => 1,
     }
 }
 
@@ -207,31 +144,133 @@ fn truncate_to_tf(ts: DateTime<Utc>, tf: &Timeframe) -> DateTime<Utc> {
     }
 }
 
-fn aggregate_candles(candles: &[Candle], tf: Timeframe, timestamp: DateTime<Utc>) -> Candle {
-    let open = candles.first().unwrap().open;
-    let close = candles.last().unwrap().close;
-    let high = candles.iter().map(|c| c.high).fold(f64::MIN, f64::max);
-    let low = candles.iter().map(|c| c.low).fold(f64::MAX, f64::min);
-    let volume = candles.iter().map(|c| c.volume).sum();
-    let trade_count = candles.iter().map(|c| c.trade_count).sum();
-    let volume_usdt = if candles.iter().all(|c| c.volume_usdt.is_some()) {
-        Some(candles.iter().map(|c| c.volume_usdt.unwrap()).sum())
-    } else {
-        None
+fn aggregate_from_lower(lower: &[Candle], tf: Timeframe) -> Vec<Candle> {
+    let count = match tf {
+        Timeframe::m5 => 5,
+        Timeframe::m15 => 3,
+        Timeframe::m30 => 2,
+        Timeframe::h1 => 2,
+        Timeframe::h4 => 4,
+        Timeframe::d1 => 6,
+        _ => 1,
     };
-    Candle {
-        instrument: candles[0].instrument.clone(),
-        interval: tf,
-        timestamp,
-        open,
-        high,
-        low,
-        close,
-        volume,
-        trade_count,
-        volume_usdt,
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i + count <= lower.len() {
+        let slice = &lower[i..i+count];
+        let open = slice.first().unwrap().open;
+        let close = slice.last().unwrap().close;
+        let high = slice.iter().map(|c| c.high).fold(f64::MIN, f64::max);
+        let low = slice.iter().map(|c| c.low).fold(f64::MAX, f64::min);
+        let volume = slice.iter().map(|c| c.volume).sum();
+        let trade_count = slice.iter().map(|c| c.trade_count).sum();
+        let volume_usdt = if slice.iter().all(|c| c.volume_usdt.is_some()) {
+            Some(slice.iter().map(|c| c.volume_usdt.unwrap()).sum())
+        } else {
+            None
+        };
+        let mut candle = Candle {
+            instrument: slice[0].instrument.clone(),
+            interval: tf.clone(),
+            timestamp: truncate_to_tf(slice[0].timestamp, &tf),
+            open, high, low, close, volume, trade_count, volume_usdt,
+        };
+        // Кастомные метрики
+        // (агрегация по цепочке)
+        i += count;
+        result.push(candle);
     }
+    result
 }
 
 #[cfg(test)]
 pub mod tests;
+
+pub struct CandleAggregator {
+    pub config: CandleConfig,
+}
+
+impl Default for CandleAggregator {
+    fn default() -> Self {
+        Self { config: CandleConfig::default() }
+    }
+}
+
+impl CandleAggregator {
+    pub fn aggregate<'a, I>(&self, trades: I, timeframe: Timeframe) -> Vec<Candle>
+    where
+        I: Iterator<Item = &'a Trade>,
+    {
+        // Stateless: агрегируем поток трейдов в свечи
+        let mut candles = Vec::new();
+        let mut current: Option<Candle> = None;
+        for trade in trades {
+            let ts = truncate_to_tf(trade.timestamp, &timeframe);
+            match &mut current {
+                Some(c) if c.timestamp == ts => {
+                    c.high = c.high.max(trade.price);
+                    c.low = c.low.min(trade.price);
+                    c.close = trade.price;
+                    c.volume += trade.amount;
+                    c.trade_count += 1;
+                    // volume_usdt и кастомные метрики — через config
+                }
+                Some(c) => {
+                    candles.push(c.clone());
+                    current = Some(Candle {
+                        instrument: trade.instrument.clone(),
+                        interval: timeframe.clone(),
+                        timestamp: ts,
+                        open: trade.price,
+                        high: trade.price,
+                        low: trade.price,
+                        close: trade.price,
+                        volume: trade.amount,
+                        trade_count: 1,
+                        volume_usdt: None, // через config
+                    });
+                }
+                None => {
+                    current = Some(Candle {
+                        instrument: trade.instrument.clone(),
+                        interval: timeframe.clone(),
+                        timestamp: ts,
+                        open: trade.price,
+                        high: trade.price,
+                        low: trade.price,
+                        close: trade.price,
+                        volume: trade.amount,
+                        trade_count: 1,
+                        volume_usdt: None, // через config
+                    });
+                }
+            }
+        }
+        if let Some(c) = current {
+            candles.push(c);
+        }
+        candles
+    }
+}
+
+// Конфиг и трейты для расширяемости
+pub struct CandleConfig {
+    pub basic_ohlcv: bool,
+    pub volume_in_usdt: UsdtVolumeSource,
+    pub custom_metrics: Vec<Box<dyn CandleMetric>>,
+}
+
+impl Default for CandleConfig {
+    fn default() -> Self {
+        Self {
+            basic_ohlcv: true,
+            volume_in_usdt: UsdtVolumeSource::None,
+            custom_metrics: vec![],
+        }
+    }
+}
+
+pub trait CandleMetric {
+    fn update(&self, trade: &Trade, candle: &mut Candle);
+    fn aggregate(&self, src: &[Candle], dst: &mut Candle);
+}
