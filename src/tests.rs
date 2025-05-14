@@ -1,5 +1,6 @@
 use super::*;
 use chrono::{TimeZone, Utc};
+use rand::seq::SliceRandom;
 
 fn sample_instrument() -> Instrument {
     Instrument {
@@ -204,4 +205,21 @@ fn test_out_of_order_trades() {
     let c0 = &candles[0];
     assert_eq!(c0.high, 120.0);
     assert_eq!(c0.volume, 1.5);
+}
+
+#[test]
+fn test_bulk_ingestion_unsorted() {
+    let t0 = 1_700_000_000_000;
+    let mut trades: Vec<_> = (0..1000)
+        .map(|i| sample_trade(t0 + i * 60_000, 100.0 + (i % 10) as f64, 1.0, Side::Buy))
+        .collect();
+    let mut rng = rand::thread_rng();
+    trades.shuffle(&mut rng);
+    let gen = CandleGenerator::default();
+    let mut m1_unsorted = gen.aggregate(trades.iter(), Timeframe::m1);
+    let trades_sorted: Vec<_> = trades.iter().cloned().collect();
+    let mut m1_sorted = gen.aggregate(trades_sorted.iter(), Timeframe::m1);
+    m1_unsorted.sort_by_key(|c| c.timestamp);
+    m1_sorted.sort_by_key(|c| c.timestamp);
+    assert_eq!(m1_unsorted, m1_sorted);
 } 
