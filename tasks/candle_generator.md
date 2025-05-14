@@ -75,6 +75,9 @@ pub trait CandleMetric {
 - [x] README.md и types.rs полностью отражают архитектуру и возможности
 - [x] Документация и тесты синхронизированы
 - [ ] Реализовать bulk ingestion для неотсортированных трейдов (edge-case, тесты, пример в examples/)
+- [x] Реализовать Super Candle (расширенная свеча с множеством метрик) через кастомный CandleMetric (пример custom_metrics.rs)
+
+### 2024-06-XX: Реализован пример SuperCandleMetric в examples/custom_metrics.rs. Демонстрирует расширенную свечу с множеством метрик (VWAP, buy/sell volume, high/low amount, avg price, spread).
 
 ---
 
