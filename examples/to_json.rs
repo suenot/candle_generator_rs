@@ -1,5 +1,6 @@
 use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side};
 use chrono::Utc;
+use chrono::TimeZone;
 use std::fs::File;
 use std::io::Write;
 
