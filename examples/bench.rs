@@ -1,10 +1,12 @@
 use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side};
 use chrono::{Utc, TimeZone};
 use std::time::Instant;
+use std::fs::File;
+use std::io::Write;
 
 fn main() {
     let t0 = 1_700_000_000_000;
-    let n = 10_000_000; // 10 миллионов трейдов
+    let n = 300_000_000; // 300 миллионов трейдов
     let batch = 1000; // 1000 трейдов на одну свечу
     println!("Генерация {} трейдов ({} трейдов на свечу)...", n, batch);
     let trades: Vec<_> = (0..n)
@@ -26,8 +28,18 @@ fn main() {
     let start = Instant::now();
     let candles = generator.aggregate(trades.iter(), Timeframe::m1);
     let elapsed = start.elapsed();
-    println!("Свечей сгенерировано: {}", candles.len());
+    let candles_len = candles.len();
+    let elapsed_secs = elapsed.as_secs_f64();
+    let throughput = n as f64 / elapsed_secs;
+    println!("Свечей сгенерировано: {}", candles_len);
     println!("Трейдов на свечу: {}", batch);
     println!("Время агрегации: {:.3?}", elapsed);
-    println!("Пропускная способность: {:.2} трейдов/сек", n as f64 / elapsed.as_secs_f64());
+    println!("Пропускная способность: {:.2} трейдов/сек", throughput);
+    // Запись результатов в файл
+    let mut file = File::create("bench_output.txt").expect("cannot create bench_output.txt");
+    writeln!(file, "trades={}", n).unwrap();
+    writeln!(file, "candles={}", candles_len).unwrap();
+    writeln!(file, "batch={}", batch).unwrap();
+    writeln!(file, "elapsed_secs={:.6}", elapsed_secs).unwrap();
+    writeln!(file, "throughput={:.2}", throughput).unwrap();
 } 
