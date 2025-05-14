@@ -16,7 +16,7 @@ mod tests {
 mod types;
 
 pub use types::*;
-use chrono::{DateTime, Utc, Timelike, TimeZone, Duration, Datelike};
+use chrono::{DateTime, Utc, Timelike};
 use std::collections::HashMap;
 
 pub struct CandleGenerator {
@@ -75,12 +75,12 @@ impl CandleGenerator {
         I: Iterator<Item = &'a Trade> + Clone,
     {
         let mut result = HashMap::new();
-        let mut tf_order = vec![Timeframe::m1, Timeframe::m5, Timeframe::m15, Timeframe::m30, Timeframe::h1, Timeframe::h4, Timeframe::d1];
+        let tf_order = vec![Timeframe::m1, Timeframe::m5, Timeframe::m15, Timeframe::m30, Timeframe::h1, Timeframe::h4, Timeframe::d1];
         let mut prev = self.aggregate(trades.clone(), Timeframe::m1);
         result.insert(Timeframe::m1, prev.clone());
         for tf in tf_order.into_iter().skip(1) {
-            let higher = aggregate_from_lower(&prev, tf);
-            result.insert(tf, higher.clone());
+            let higher = aggregate_from_lower(&prev, &tf);
+            result.insert(tf.clone(), higher.clone());
             prev = higher;
         }
         result
@@ -99,6 +99,7 @@ fn new_candle(trade: &Trade, tf: Timeframe, ts: DateTime<Utc>, config: &CandleCo
         volume: trade.amount,
         trade_count: 1,
         volume_usdt: calc_volume_usdt(trade, &config.volume_in_usdt),
+        custom: HashMap::new(),
     };
     for m in &config.custom_metrics {
         m.update(trade, &mut c);
@@ -144,7 +145,7 @@ fn truncate_to_tf(ts: DateTime<Utc>, tf: &Timeframe) -> DateTime<Utc> {
     }
 }
 
-fn aggregate_from_lower(lower: &[Candle], tf: Timeframe) -> Vec<Candle> {
+fn aggregate_from_lower(lower: &[Candle], tf: &Timeframe) -> Vec<Candle> {
     let count = match tf {
         Timeframe::m5 => 5,
         Timeframe::m15 => 3,
@@ -172,11 +173,11 @@ fn aggregate_from_lower(lower: &[Candle], tf: Timeframe) -> Vec<Candle> {
         let mut candle = Candle {
             instrument: slice[0].instrument.clone(),
             interval: tf.clone(),
-            timestamp: truncate_to_tf(slice[0].timestamp, &tf),
+            timestamp: truncate_to_tf(slice[0].timestamp, tf),
             open, high, low, close, volume, trade_count, volume_usdt,
+            custom: HashMap::new(),
         };
-        // Кастомные метрики
-        // (агрегация по цепочке)
+        // Кастомные метрики (агрегация по цепочке)
         i += count;
         result.push(candle);
     }
@@ -228,6 +229,7 @@ impl CandleAggregator {
                         volume: trade.amount,
                         trade_count: 1,
                         volume_usdt: None, // через config
+                        custom: HashMap::new(),
                     });
                 }
                 None => {
@@ -242,6 +244,7 @@ impl CandleAggregator {
                         volume: trade.amount,
                         trade_count: 1,
                         volume_usdt: None, // через config
+                        custom: HashMap::new(),
                     });
                 }
             }
