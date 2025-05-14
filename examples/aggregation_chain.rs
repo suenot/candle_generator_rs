@@ -1,5 +1,5 @@
 use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side};
-use chrono::Utc;
+use chrono::{Utc, TimeZone};
 
 fn main() {
     let trades = vec![
