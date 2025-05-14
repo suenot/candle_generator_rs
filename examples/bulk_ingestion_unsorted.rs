@@ -1,5 +1,5 @@
 use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side};
-use chrono::Utc;
+use chrono::{Utc, TimeZone};
 use rand::seq::SliceRandom;
 
 fn main() {
