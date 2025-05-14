@@ -2,6 +2,7 @@ use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, Mark
 use std::fs::File;
 use csv::Reader;
 use chrono::Utc;
+use chrono::TimeZone;
 
 fn main() {
     let file = File::open("trades.csv").expect("cannot open trades.csv");
