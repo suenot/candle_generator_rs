@@ -83,6 +83,25 @@ pub trait CandleMetric {
 - Для новых метрик — реализовывать CandleMetric и покрывать тестами
 - Регулярно обновлять README.md и tasks/candle_generator.md при изменениях
 - Настроить CI для автоматической проверки тестов и сборки примеров (опционально)
+    - **GitHub Actions**: используйте workflow `.github/workflows/ci.yml`:
+      ```yaml
+      name: CI
+      on: [push, pull_request]
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: actions/checkout@v3
+            - uses: actions-rs/toolchain@v1
+              with:
+                toolchain: stable
+                override: true
+            - run: cargo test --all
+            - run: cargo run --release --example bench
+      ```
+    - Добавьте бейджи статуса сборки и тестов в README.md
+- Следить за производительностью: периодически запускать бенчмарки и фиксировать результаты
+- Принимать обратную связь от пользователей и инвесторов, интегрировать новые сценарии
 
 ---
 
