@@ -1,1 +1,1 @@
- 
+- [2024-06-09] Все примеры перемещены в examples/ соответствующих пакетов (candle_generator/examples/, candle_batch_aggregator/examples/). Корневая папка examples удалена. Структура полностью соответствует стандарту Rust workspace и best practices для AGI-ready архитектуры. 
