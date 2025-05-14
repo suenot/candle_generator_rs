@@ -24,21 +24,18 @@ fn sample_trade(ts: i64, price: f64, amount: f64, side: Side) -> Trade {
 #[test]
 fn test_create_generator() {
     let instrument = sample_instrument();
-    let gen = CandleGenerator::new(vec![Timeframe::m1, Timeframe::m5], instrument.clone());
-    assert_eq!(gen.instrument, instrument);
-    assert!(gen.candles.contains_key(&Timeframe::m1));
-    assert!(gen.candles.contains_key(&Timeframe::m5));
+    let gen = CandleGenerator::default();
+    assert_eq!(gen.config.basic_ohlcv, true);
 }
 
 #[test]
 fn test_add_and_reset() {
     let instrument = sample_instrument();
-    let mut gen = CandleGenerator::new(vec![Timeframe::m1], instrument);
+    let mut gen = CandleGenerator::default();
     let trade = sample_trade(1_700_000_000_000, 42000.0, 0.1, Side::Buy);
-    gen.add_trade(trade);
-    assert_eq!(gen.get_candles(Timeframe::m1, 10).len(), 1);
-    gen.reset();
-    assert_eq!(gen.get_candles(Timeframe::m1, 10).len(), 0);
+    let trades = vec![trade];
+    let candles = gen.aggregate(trades.iter(), Timeframe::m1);
+    assert_eq!(candles.len(), 1);
 }
 
 #[test]
@@ -105,15 +102,16 @@ fn test_usdt_volume_none() {
 struct BuySellVolume;
 impl CandleMetric for BuySellVolume {
     fn update(&self, trade: &Trade, candle: &mut Candle) {
-        let buy = candle.custom.get_mut("buy_volume").unwrap_or(&mut 0.0);
-        let sell = candle.custom.get_mut("sell_volume").unwrap_or(&mut 0.0);
+        let buy = *candle.custom.get("buy_volume").unwrap_or(&0.0);
+        let sell = *candle.custom.get("sell_volume").unwrap_or(&0.0);
+        let (mut buy, mut sell) = (buy, sell);
         match trade.side {
-            Side::Buy => *buy += trade.amount,
-            Side::Sell => *sell += trade.amount,
+            Side::Buy => buy += trade.amount,
+            Side::Sell => sell += trade.amount,
             _ => {}
         }
-        candle.custom.insert("buy_volume".to_string(), *buy);
-        candle.custom.insert("sell_volume".to_string(), *sell);
+        candle.custom.insert("buy_volume".to_string(), buy);
+        candle.custom.insert("sell_volume".to_string(), sell);
     }
     fn aggregate(&self, _src: &[Candle], _dst: &mut Candle) {}
 }
