@@ -1,6 +1,6 @@
 use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side};
 use duckdb::{Connection, Result};
-use chrono::Utc;
+use chrono::{Utc, TimeZone};
 
 fn main() -> Result<()> {
     let conn = Connection::open("trades.db")?;
