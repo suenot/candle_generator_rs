@@ -1,0 +1,5 @@
+trades=300000000
+candles=300000
+batch=1000
+elapsed_secs=170.876274
+throughput=1755656.26
