@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
 
 // Timeframe codes use lowercase (e.g., m1, h1, d1) to avoid ambiguity with monthly candles (M1), per .cursor/rules/terms.md and industry standards.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -70,7 +71,9 @@ pub struct Candle {
     pub trade_count: u64,
     #[serde(rename = "vusdt")]
     pub volume_usdt: Option<f64>,
-    // кастомные метрики можно добавлять через расширение структуры или отдельное поле
+    /// Кастомные метрики (buy/sell volume, VWAP и др.), AGI-ready
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub custom: HashMap<String, f64>,
 }
 
 pub enum UsdtVolumeSource {
