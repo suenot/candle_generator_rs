@@ -2,11 +2,11 @@ use super::super::Args;
 use anyhow::Result;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
-use csv::{ReaderBuilder, WriterBuilder};
-use serde::{Deserialize, Serialize};
-use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side, Candle};
+use csv::ReaderBuilder;
+use serde::Deserialize;
+use candle_generator::{Trade, Instrument, Pair, MarketType, Side};
 use std::time::Instant;
-use crate::chain;
+use crate::aggregation;
 
 #[derive(Debug, Deserialize)]
 struct CsvTrade {
@@ -46,20 +46,20 @@ impl CsvTrade {
     }
 }
 
-fn parse_intervals(interval_str: &str) -> Vec<Timeframe> {
+fn parse_intervals(interval_str: &str) -> Vec<candle_generator::Timeframe> {
     if interval_str.to_uppercase() == "ALL" {
-        return vec![Timeframe::m1, Timeframe::m5, Timeframe::m15, Timeframe::m30, Timeframe::h1, Timeframe::h4, Timeframe::d1];
+        return vec![candle_generator::Timeframe::m1, candle_generator::Timeframe::m5, candle_generator::Timeframe::m15, candle_generator::Timeframe::m30, candle_generator::Timeframe::h1, candle_generator::Timeframe::h4, candle_generator::Timeframe::d1];
     }
     interval_str
         .split(',')
         .filter_map(|s| match s.trim() {
-            "1" => Some(Timeframe::m1),
-            "5" => Some(Timeframe::m5),
-            "15" => Some(Timeframe::m15),
-            "30" => Some(Timeframe::m30),
-            "60" => Some(Timeframe::h1),
-            "240" => Some(Timeframe::h4),
-            "1440" => Some(Timeframe::d1),
+            "1" => Some(candle_generator::Timeframe::m1),
+            "5" => Some(candle_generator::Timeframe::m5),
+            "15" => Some(candle_generator::Timeframe::m15),
+            "30" => Some(candle_generator::Timeframe::m30),
+            "60" => Some(candle_generator::Timeframe::h1),
+            "240" => Some(candle_generator::Timeframe::h4),
+            "1440" => Some(candle_generator::Timeframe::d1),
             _ => None,
         })
         .collect()
@@ -69,7 +69,6 @@ pub fn process_csv_batch(args: &Args) -> Result<()> {
     let start = Instant::now();
     let intervals = parse_intervals(&args.interval);
     let symbols: Vec<String> = if args.symbol.to_uppercase() == "ALL" {
-        // Все поддиректории в input
         fs::read_dir(&args.input)?
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
@@ -98,48 +97,17 @@ pub fn process_csv_batch(args: &Args) -> Result<()> {
                 trades.push(csv_trade.to_trade());
             }
             println!("    Trades: {}", trades.len());
-            // Агрегация цепочкой
-            let generator = CandleGenerator::default();
-            let base_tf = *intervals.iter().min().unwrap_or(&Timeframe::m1);
-            let base_candles = generator.aggregate(trades.iter(), base_tf.clone());
-            let chain = chain::aggregate_chain(&base_candles, &intervals)?;
+            let chain = aggregation::aggregate_trades_chain(trades.iter(), &intervals);
             for (tf, candles) in chain {
                 let out_dir = args.output.clone().unwrap_or_else(|| PathBuf::from("candles"));
                 let out_dir = out_dir.join(format!("{}_{}", symbol, format!("{:?}", tf)));
                 fs::create_dir_all(&out_dir)?;
                 let out_file = out_dir.join(format!("{}_{}.csv", file_path.file_stem().unwrap().to_string_lossy(), format!("{:?}", tf)));
-                let mut wtr = WriterBuilder::new().has_headers(true).from_path(&out_file)?;
-                for candle in &candles {
-                    wtr.serialize(SimpleCandle::from(candle))?;
-                }
-                wtr.flush()?;
+                aggregation::write_candles_csv(&candles, &out_file)?;
                 println!("    [{:?}] Candles: {} -> {:?}", tf, candles.len(), out_file);
             }
         }
     }
     println!("\nBatch completed in {:.2?}", start.elapsed());
     Ok(())
-}
-
-#[derive(Debug, Serialize)]
-struct SimpleCandle {
-    timestamp: i64,
-    open: f64,
-    high: f64,
-    low: f64,
-    close: f64,
-    volume: f64,
-}
-
-impl From<&Candle> for SimpleCandle {
-    fn from(c: &Candle) -> Self {
-        Self {
-            timestamp: c.timestamp.timestamp_millis(),
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-        }
-    }
 } 
