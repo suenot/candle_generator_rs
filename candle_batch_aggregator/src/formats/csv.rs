@@ -6,6 +6,7 @@ use csv::{ReaderBuilder, WriterBuilder};
 use serde::{Deserialize, Serialize};
 use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side, Candle};
 use std::time::Instant;
+use crate::chain;
 
 #[derive(Debug, Deserialize)]
 struct CsvTrade {
@@ -97,9 +98,12 @@ pub fn process_csv_batch(args: &Args) -> Result<()> {
                 trades.push(csv_trade.to_trade());
             }
             println!("    Trades: {}", trades.len());
-            for tf in &intervals {
-                let generator = CandleGenerator::default();
-                let candles = generator.aggregate(trades.iter(), tf.clone());
+            // Агрегация цепочкой
+            let generator = CandleGenerator::default();
+            let base_tf = *intervals.iter().min().unwrap_or(&Timeframe::m1);
+            let base_candles = generator.aggregate(trades.iter(), base_tf.clone());
+            let chain = chain::aggregate_chain(&base_candles, &intervals)?;
+            for (tf, candles) in chain {
                 let out_dir = args.output.clone().unwrap_or_else(|| PathBuf::from("candles"));
                 let out_dir = out_dir.join(format!("{}_{}", symbol, format!("{:?}", tf)));
                 fs::create_dir_all(&out_dir)?;
