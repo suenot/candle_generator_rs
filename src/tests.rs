@@ -222,4 +222,53 @@ fn test_bulk_ingestion_unsorted() {
     m1_unsorted.sort_by_key(|c| c.timestamp);
     m1_sorted.sort_by_key(|c| c.timestamp);
     assert_eq!(m1_unsorted, m1_sorted);
+}
+
+#[test]
+fn test_bulk_ingestion_duplicates() {
+    let t0 = 1_700_000_000_000;
+    let mut trades = vec![
+        sample_trade(t0, 100.0, 1.0, Side::Buy),
+        sample_trade(t0, 100.0, 1.0, Side::Buy), // дубликат
+        sample_trade(t0 + 60_000, 110.0, 2.0, Side::Sell),
+    ];
+    let mut rng = rand::thread_rng();
+    trades.shuffle(&mut rng);
+    let gen = CandleGenerator::default();
+    let mut candles = gen.aggregate(trades.iter(), Timeframe::m1);
+    candles.sort_by_key(|c| c.timestamp);
+    assert_eq!(candles.len(), 2);
+    assert_eq!(candles[0].volume, 2.0); // оба трейда в одной свече
+}
+
+#[test]
+fn test_bulk_ingestion_same_timestamp() {
+    let t0 = 1_700_000_000_000;
+    let trades = vec![
+        sample_trade(t0, 100.0, 1.0, Side::Buy),
+        sample_trade(t0, 110.0, 2.0, Side::Sell), // тот же timestamp
+    ];
+    let gen = CandleGenerator::default();
+    let candles = gen.aggregate(trades.iter(), Timeframe::m1);
+    assert_eq!(candles.len(), 1);
+    assert_eq!(candles[0].open, 100.0);
+    assert_eq!(candles[0].close, 110.0);
+    assert_eq!(candles[0].high, 110.0);
+    assert_eq!(candles[0].low, 100.0);
+    assert_eq!(candles[0].volume, 3.0);
+}
+
+#[test]
+fn test_bulk_ingestion_boundary_trades() {
+    let t0 = 1_700_000_000_000;
+    let t1 = t0 + 60_000; // граница следующей свечи
+    let trades = vec![
+        sample_trade(t0, 100.0, 1.0, Side::Buy),
+        sample_trade(t1, 110.0, 2.0, Side::Sell), // ровно на границе
+    ];
+    let gen = CandleGenerator::default();
+    let candles = gen.aggregate(trades.iter(), Timeframe::m1);
+    assert_eq!(candles.len(), 2);
+    assert_eq!(candles[0].open, 100.0);
+    assert_eq!(candles[1].open, 110.0);
 } 
