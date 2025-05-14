@@ -74,6 +74,7 @@ pub trait CandleMetric {
 - [x] Примеры bulk ingestion, aggregation chain
 - [x] README.md и types.rs полностью отражают архитектуру и возможности
 - [x] Документация и тесты синхронизированы
+- [ ] Реализовать bulk ingestion для неотсортированных трейдов (edge-case, тесты, пример в examples/)
 
 ---
 
