@@ -1,5 +1,5 @@
 use candle_generator::{CandleGenerator, Timeframe, Trade, Instrument, Pair, MarketType, Side, Candle};
-use chrono::Utc;
+use chrono::{Utc, TimeZone};
 use polars::prelude::*;
 
 fn main() -> polars::prelude::PolarsResult<()> {
