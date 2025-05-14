@@ -35,11 +35,16 @@ let candles = generator.aggregate(trades.iter(), Timeframe::m1);
 - Загрузка из DuckDB: [from_duckdb.rs](examples/from_duckdb.rs)
 - Загрузка из QuestDB: [from_questdb.rs](examples/from_questdb.rs)
 - Загрузка из ClickHouse: [from_clickhouse.rs](examples/from_clickhouse.rs)
+- Экспорт в CSV: [to_csv.rs](examples/to_csv.rs)
+- Экспорт в JSON: [to_json.rs](examples/to_json.rs)
+- Экспорт в Parquet: [to_parquet.rs](examples/to_parquet.rs)
 - Строгая цепочка агрегации: [aggregation_chain.rs](examples/aggregation_chain.rs) (m1→m5→m15→m30→h1→h4→d1)
 - Расчёт объёма в USDT: [usdt_volume.rs](examples/usdt_volume.rs) (Fixed, Callback, None)
 - Раздельный учёт объёма покупок и продаж: [buy_sell_volume.rs](examples/buy_sell_volume.rs)
 - Кастомные метрики (VWAP, super candle и др.): [custom_metrics.rs](examples/custom_metrics.rs)
 - Быстрая агрегация большого объёма трейдов: [bulk_ingestion.rs](examples/bulk_ingestion.rs)
+- Свечи с пропусками (gaps): [gaps_and_empty_candles.rs](examples/gaps_and_empty_candles.rs)
+- Out-of-order трейды: [out_of_order_trades.rs](examples/out_of_order_trades.rs)
 
 ---
 
