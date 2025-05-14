@@ -175,13 +175,12 @@ pub trait CandleMetric {
 - [x] Пример bulk_ingestion_unsorted.rs реализован (examples/bulk_ingestion_unsorted.rs)
 - [x] Тест test_bulk_ingestion_unsorted реализован (src/tests.rs)
 - [x] Покрытие out-of-order trades (test_out_of_order_trades)
-- [ ] Проверить/добавить тесты на дубликаты, одинаковые timestamp, трейды на границе свечей
+- [x] Тесты на дубликаты, одинаковые timestamp, boundary trades добавлены (test_bulk_ingestion_duplicates, test_bulk_ingestion_same_timestamp, test_bulk_ingestion_boundary_trades)
 
 ### Следующие шаги
-1. Проверить, что тесты покрывают все edge-cases (дубликаты, одинаковые timestamp, границы свечей).
-2. При необходимости — добавить тесты/примеры.
-3. Зафиксировать архитектурную базу для Super Candles (multi-source ingestion, расширенные метрики).
-4. Обновить README.md и документацию.
+1. Зафиксировать архитектурную базу для Super Candles (multi-source ingestion, расширенные метрики).
+2. Обновить README.md и документацию.
+3. Продолжить покрытие edge-cases и развитие примеров.
 
 ### Архитектурные решения
 - Stateless-агрегация: результат не зависит от порядка трейдов.
