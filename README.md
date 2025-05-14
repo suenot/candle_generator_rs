@@ -88,7 +88,7 @@ pub trait CandleMetric {
 | Bulk ingestion (sorted)        | ✅         | В examples/                        |
 | Bulk ingestion (unsorted)      | Planned    |                                    |
 | Extra metrics (buy/sell, etc.) | Planned    | Через CandleMetric                 |
-| Super candle (100+ metrics)    | Planned    |                                    |
+| Super candle (100+ metrics)    | ✅         | Через кастомные метрики (см. custom_metrics.rs)         |
 | Candle history limit           | Planned    |                                    |
 | Thread safety                  | Planned    |                                    |
 | Multi-instrument support       | Planned    |                                    |
